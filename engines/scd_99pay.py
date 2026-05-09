@@ -34,8 +34,8 @@ def extrair(texto):
 
     # --- DADOS DO CONTRATO (CCB) ---
     dados['NUMERO_CCB'] = buscar_padrao([
-        r'CÉDULA DE CRÉDITO BANCÁRIO N[º°].?\s*([a-zA-Z0-9]{5,20})\b',
-        r'\(CCB\):\s*([a-zA-Z0-9]{4,20})\b'
+        r'CÉDULA DE CRÉDITO BANCÁRIO N[º°].?\s*([a-zA-Z0-9]{5,})(?=\s)',
+        r'\(CCB\):\s*([a-zA-Z0-9]+)(?=\s)'
     ], texto)
     dados['TIPO_CONTRATO'] = "99PAY SCD v1.0"
 
