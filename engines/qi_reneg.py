@@ -47,7 +47,7 @@ def extrair(texto):
         'ENDERECO_CLIENTE': buscar_multiplo([r'Endereço residencial:\s*(.*?)(?=\sCidade:)', r'Endereço:\s*(.*?)(?=\sCidade:|\sCEP:)'], texto),
         'CIDADE': buscar_multiplo([r'Cidade:\s*(.*?)(?=Estado:|CEP:|UF)'], texto),
         'ESTADO': buscar_multiplo([r'Estado:\s*([A-Z]{2}|[A-Za-z\s]+)'], texto),
-        'EMAIL_CLIENTE': buscar_multiplo([r'E-mail:\s*([^\s,]+)'], texto),
+        'EMAIL_CLIENTE': buscar_multiplo([r'E-mail:\s*([^\s,]+)', r'([\w\.-]+@[\w\.-]+\.\w+)'], texto),
         'TEL_CLIENTE': buscar_multiplo([r'Telefone:\s*([\+\d\s\(\)-]+)', r'Tel\.:\s*([\+\d\s\(\)-]+)'], texto),
         
         # Flag para pular a validação de contagem de parcelas

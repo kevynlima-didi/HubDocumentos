@@ -20,7 +20,7 @@ from pypdf import PdfReader
 from tkinter import messagebox
 from docx.shared import Inches
 from PIL import Image
-from config import Config
+from config import Config, SYS_EXTERNAL
 from utils import limpar_valor, buscar_padrao
 from pokayokes import BusinessValidators 
 from engines import qi_standard, qi_reneg, scd_99pay
@@ -29,11 +29,12 @@ from engines import qi_standard, qi_reneg, scd_99pay
 #  1. ATUALIZADOR (PERSISTENTE)
 # ==============================================================================
 class SelfUpdater:
-    def __init__(self, current_version, repo_url, token, exe_name="Hub.exe"):
+    def __init__(self, current_version, repo_url, token="", exe_name="Hub.exe"):
         self.current_version = current_version
         self.repo_url = repo_url
-        self.token = token 
+        self.token = token
         self.exe_name = exe_name
+        self.exe_dir = os.path.dirname(os.path.abspath(sys.executable)) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
         self.api_url = f"https://api.github.com/repos/{repo_url}/releases/latest"
         self.download_url = None
         self.new_version = None
@@ -41,28 +42,43 @@ class SelfUpdater:
 
     def check_for_updates(self):
         try:
-            headers = {"Authorization": f"token {self.token}", "Accept": "application/vnd.github.v3+json"}
-            response = requests.get(self.api_url, headers=headers, timeout=5)
+            headers = {"Accept": "application/vnd.github.v3+json"}
+            if self.token:
+                headers["Authorization"] = f"token {self.token}"
+            response = requests.get(self.api_url, headers=headers, timeout=10)
+            if response.status_code == 401:
+                logging.error("GitHub token invalido ou expirado. Verificando sem autenticacao...")
+                headers_no_auth = {"Accept": "application/vnd.github.v3+json"}
+                response = requests.get(self.api_url, headers=headers_no_auth, timeout=10)
+            if response.status_code == 403:
+                logging.error("GitHub API rate limit excedido.")
+                return False, None, None
+            if response.status_code == 404:
+                logging.error("Repositorio GitHub nao encontrado.")
+                return False, None, None
             if response.status_code == 200:
                 data = response.json()
                 self.new_version = data['tag_name']
                 self.release_notes = data.get('body', 'Melhorias gerais.')
                 if self.new_version > self.current_version:
-                    if 'assets' in data and len(data['assets']) > 0:
-                        self.download_url = data['assets'][0]['url'] 
+                    exe_assets = [a for a in data.get('assets', []) if a['name'].endswith('.exe')]
+                    if exe_assets:
+                        self.download_url = exe_assets[0]['url']
                         return True, self.new_version, self.release_notes
             return False, None, None
-        except Exception: return False, None, None
+        except Exception as e:
+            logging.error(f"Erro ao verificar atualizacoes: {e}")
+            return False, None, None
 
     def start_update_process(self, parent_window, notes=""):
         if not getattr(sys, 'frozen', False): return
-        self.release_notes = notes 
-        
+        self.release_notes = notes
+
         self.progress_window = ctk.CTkToplevel(parent_window)
         self.progress_window.title("Atualização Obrigatória")
         self.progress_window.geometry("400x180")
         self.progress_window.attributes("-topmost", True)
-        self.progress_window.overrideredirect(True) 
+        self.progress_window.overrideredirect(True)
         x = parent_window.winfo_x() + (parent_window.winfo_width() // 2) - 200
         y = parent_window.winfo_y() + (parent_window.winfo_height() // 2) - 90
         self.progress_window.geometry(f"+{x}+{y}")
@@ -73,10 +89,10 @@ class SelfUpdater:
         threading.Thread(target=self._download_and_swap).start()
 
     def _download_and_swap(self):
-        new_file_name = "update.new"
+        new_file_name = os.path.join(self.exe_dir, "update.new")
         try:
             try:
-                with open("changelog.update", "w", encoding="utf-8") as f:
+                with open(os.path.join(self.exe_dir, "changelog.update"), "w", encoding="utf-8") as f:
                     f.write(f"VERSÃO {self.new_version}\n\n{self.release_notes}")
             except: pass
 
@@ -84,31 +100,43 @@ class SelfUpdater:
             while os.path.exists(new_file_name):
                 try:
                     os.remove(new_file_name)
-                    break # Conseguiu apagar, segue o fluxo
+                    break
                 except Exception:
-                    # Se falhar, pergunta se quer tentar de novo
-                    retry = messagebox.askretrycancel("Arquivo Bloqueado", 
+                    retry = messagebox.askretrycancel("Arquivo Bloqueado",
                         "O Hub não consegue atualizar porque o arquivo temporário está preso.\n"
                         "Provavelmente você tem outra janela do Hub aberta.\n\n"
                         "👉 FECHE AS OUTRAS JANELAS e clique em 'Tentar Novamente'.")
-                    
                     if not retry:
-                        # Se cancelar, fecha o programa. Não deixa usar a versão velha.
                         os._exit(0)
 
-            headers = {"Authorization": f"token {self.token}", "Accept": "application/octet-stream"}
-            r = requests.get(self.download_url, headers=headers, stream=True)
+            headers = {"Accept": "application/octet-stream"}
+            if self.token:
+                headers["Authorization"] = f"token {self.token}"
+            r = requests.get(self.download_url, headers=headers, stream=True, timeout=30)
             total_length = int(r.headers.get('content-length', 0))
             dl = 0
             with open(new_file_name, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=4096):
                     dl += len(chunk); f.write(chunk)
                     if total_length > 0: self.bar.set(dl / total_length)
-            
-            bat_script = f"""@echo off\ntimeout /t 2 /nobreak > NUL\n:loop\ndel "{self.exe_name}"\nif exist "{self.exe_name}" goto loop\nrename "{new_file_name}" "{self.exe_name}"\nstart "" "{self.exe_name}"\ndel "%~f0" """
-            with open("updater.bat", "w") as bat: bat.write(bat_script)
-            subprocess.Popen("updater.bat", shell=True); os._exit(0)
-        
+
+            # Valida arquivo baixado
+            if not os.path.exists(new_file_name) or os.path.getsize(new_file_name) == 0:
+                logging.error("Download resultou em arquivo vazio. Tentando novamente...")
+                os.remove(new_file_name) if os.path.exists(new_file_name) else None
+                r = requests.get(self.download_url, headers=headers, stream=True, timeout=60)
+                with open(new_file_name, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=4096):
+                        f.write(chunk)
+                if os.path.getsize(new_file_name) == 0:
+                    raise Exception("Arquivo de atualização vazio após retry.")
+
+            exe_path = os.path.join(self.exe_dir, self.exe_name)
+            bat_path = os.path.join(self.exe_dir, "updater.bat")
+            bat_script = f"""@echo off\ntimeout /t 2 /nobreak > NUL\n:loop\ndel "{exe_path}"\nif exist "{exe_path}" goto loop\nrename "{new_file_name}" "{self.exe_name}"\nstart "" "{exe_path}"\ndel "%~f0" """
+            with open(bat_path, "w") as bat: bat.write(bat_script)
+            subprocess.Popen(bat_path, shell=True); os._exit(0)
+
         except PermissionError:
             messagebox.showerror("Erro Fatal", "Sem permissão de escrita na pasta.\nMova o Hub para 'Documentos'.")
             os._exit(1)
@@ -151,11 +179,12 @@ class AutoDED_App(ctk.CTk):
         self.after(3000, self.verificar_atualizacao_silenciosa)
 
     def verificar_changelog_pendente(self):
-        if os.path.exists("changelog.update"):
+        changelog_path = os.path.join(SYS_EXTERNAL, "changelog.update")
+        if os.path.exists(changelog_path):
             try:
-                with open("changelog.update", "r", encoding="utf-8") as f: texto = f.read()
+                with open(changelog_path, "r", encoding="utf-8") as f: texto = f.read()
                 self.mostrar_modal_changelog(texto)
-                os.remove("changelog.update")
+                os.remove(changelog_path)
             except: pass
 
     def mostrar_modal_changelog(self, texto):
@@ -418,9 +447,14 @@ class AutoDED_App(ctk.CTk):
         if not self.txt_mis.get("0.0", "end").strip(): self.txt_mis.insert("0.0", self.placeholder_mis_txt); self.txt_mis.configure(text_color="gray")
 
     def form_quit(self, p):
-        container = ctk.CTkFrame(p, fg_color="transparent"); container.pack(fill="both", expand=True, padx=50, pady=30) 
+        container = ctk.CTkFrame(p, fg_color="transparent"); container.pack(fill="both", expand=True, padx=50, pady=30)
         ctk.CTkButton(container, text="1. CARREGAR PDF (CCB)", command=lambda: self.carregar_pdf('QUIT'), fg_color=Config.COLORS["success"], height=55, font=(Config.FONT_FAMILY, 14, "bold"), corner_radius=8).pack(fill="x", pady=(0, 20))
-        ctk.CTkLabel(container, text="DATA QUITAÇÃO (DD/MM/AAAA)", font=(Config.FONT_FAMILY, 11, "bold"), text_color=Config.COLORS["text_light"]).pack(anchor="w", padx=5)
+        ctk.CTkLabel(container, text="2. COLE A TABELA DO MIS ABAIXO", font=(Config.FONT_FAMILY, 11, "bold"), text_color=Config.COLORS["text_light"]).pack(anchor="w", padx=5)
+        self.txt_mis_quit = ctk.CTkTextbox(container, height=150, border_color=Config.COLORS["border"], border_width=1, font=("Consolas", 11), fg_color=Config.COLORS["input_bg"], text_color=Config.COLORS["text"], corner_radius=6)
+        self.txt_mis_quit.pack(fill="x", pady=(5, 10))
+        self.lbl_status_quit = ctk.CTkLabel(container, text="", text_color=Config.COLORS["text_light"], font=(Config.FONT_FAMILY, 11))
+        self.lbl_status_quit.pack(anchor="w", padx=5)
+        ctk.CTkLabel(container, text="DATA QUITAÇÃO (DD/MM/AAAA)", font=(Config.FONT_FAMILY, 11, "bold"), text_color=Config.COLORS["text_light"]).pack(anchor="w", padx=5, pady=(10, 0))
         self.ent_dt_quit = ctk.CTkEntry(container, height=45, border_color=Config.COLORS["border"], border_width=1, fg_color=Config.COLORS["input_bg"], text_color=Config.COLORS["text"], corner_radius=6); self.ent_dt_quit.pack(fill="x", pady=(5, 20))
         self.ent_tk_quit = ctk.CTkEntry(container, height=45, border_color=Config.COLORS["border"], border_width=1, fg_color=Config.COLORS["input_bg"], text_color=Config.COLORS["text"], corner_radius=6, placeholder_text="NÚMERO DO TICKET"); self.ent_tk_quit.pack(fill="x", pady=(5, 30)); self.ent_tk_quit.bind("<KeyRelease>", lambda e: self.check_ready_quit())
         self.btn_quit = ctk.CTkButton(container, text="GERAR CARTA DE QUITAÇÃO", state="disabled", height=55, fg_color=Config.COLORS["disabled"], font=(Config.FONT_FAMILY, 14, "bold"), corner_radius=8, command=lambda: self.pre_validacao("QUIT")); self.btn_quit.pack(fill="x")
@@ -433,10 +467,18 @@ class AutoDED_App(ctk.CTk):
             if not txt or txt == self.placeholder_mis_txt: return
             try:
                 lines = [s.strip() for s in txt.split('\n') if s.strip()]; data = []
+                # Detecção de MIS em inglês
+                header_line = ' '.join(lines[:3]).lower()
+                en_keywords = ['installment', 'principal', 'interest', 'due date', 'status', 'outstanding']
+                if any(k in header_line for k in en_keywords):
+                    self.lbl_status.configure(text="⚠ MIS em INGLÊS detectado! Copie a tabela em PORTUGUÊS do MIS.", text_color=Config.COLORS["danger"]); return
                 for i in range(0, len(lines), 12):
                     grp = [re.sub(r'integralment(?!e)', 'integralmente', g, flags=re.IGNORECASE) for g in lines[i:i+12]]
                     if len(grp) == 12: data.append(grp)
-                    elif "Total" in str(grp[0]): data.append(grp + ["-"] * (12 - len(grp)))
+                    elif len(grp) > 0 and ("Total" in str(grp[0]) or "TUTAL" in str(grp[0]).upper() or "SOMA" in str(grp[0]).upper()):
+                        data.append(grp + ["-"] * (12 - len(grp)))
+                if not data:
+                    self.lbl_status.configure(text="⚠ Tabela inválida. Verifique se colou corretamente.", text_color=Config.COLORS["danger"]); return
                 df = pd.DataFrame(data, columns=["Parcelas", "Principal", "Juros", "Imposto", "Juros de Mora", "Vencimento", "Status", "Desconto de Juros", "Valor do Desconto", "Valor Antes do Desconto", "Total Devido", "Total Pago"])
                 self.df_mis_atual = df
             except Exception as e: self.lbl_status.configure(text=f"Erro Formato: {e}", text_color=Config.COLORS["danger"]); return
@@ -508,7 +550,19 @@ class AutoDED_App(ctk.CTk):
         et.insert(0, self.ent_ticket.get() if modo == "DED" else self.ent_tk_quit.get()); et.pack(side="right", fill="x", expand=True, padx=10); self.ents['TICKET'] = et
         btn = ctk.CTkFrame(m, fg_color="transparent"); btn.pack(fill="x", padx=20, pady=20)
         ctk.CTkButton(btn, text="CANCELAR", fg_color=Config.COLORS["danger"], width=150, height=40, command=m.destroy).pack(side="left")
-        ctk.CTkButton(btn, text="CONFIRMAR E GERAR", fg_color=Config.COLORS["success"], width=200, height=40, command=lambda: self.executar_geracao(modo, m)).pack(side="right")
+        btn_gerar = ctk.CTkButton(btn, text="CONFIRMAR E GERAR", fg_color=Config.COLORS["success"], width=200, height=40, command=lambda: self.executar_geracao(modo, m))
+        btn_gerar.pack(side="right")
+
+        if self.campos_faltantes:
+            btn_gerar.configure(state="disabled", fg_color=Config.COLORS["disabled"], text=f"PREENCHA OS {len(self.campos_faltantes)} CAMPOS EM VERMELHO")
+            def _verificar_campos_preenchidos(*args):
+                faltando = [k for k in self.campos_faltantes if k in self.ents and not self.ents[k].get().strip()]
+                if faltando:
+                    btn_gerar.configure(state="disabled", fg_color=Config.COLORS["disabled"], text=f"PREENCHA OS {len(faltando)} CAMPOS EM VERMELHO")
+                else:
+                    btn_gerar.configure(state="normal", fg_color=Config.COLORS["success"], text="CONFIRMAR E GERAR")
+            for k in self.campos_faltantes:
+                if k in self.ents: self.ents[k].bind("<KeyRelease>", _verificar_campos_preenchidos)
 
     def executar_geracao(self, modo, modal):
         for k, e in self.ents.items():
@@ -537,10 +591,32 @@ class AutoDED_App(ctk.CTk):
             messagebox.showerror("Erro Geração", str(e))
 
     def processar_quitacao(self, ticket):
-        try: 
+        try:
+            # Valida MIS da quitação
+            df_quit = self._parse_mis_quit()
+            if df_quit is not None and self.dados_pdf:
+                is_valid, erros = BusinessValidators.validar_quitacao(df_quit, self.dados_pdf)
+                if not is_valid:
+                    messagebox.showerror("Validação de Quitação", "\n".join(erros))
+                    return
             dt = self.ent_dt_quit.get()
             self.converter_e_copiar(self.gerar_arquivo("template_quitacao.docx", {'DATA_QUITACAO': dt}, ticket, "QUITACAO"), ticket)
         except Exception as e: messagebox.showerror("Erro", str(e))
+
+    def _parse_mis_quit(self):
+        if not hasattr(self, 'txt_mis_quit') or not self.txt_mis_quit.winfo_exists(): return None
+        txt = self.txt_mis_quit.get("0.0", "end").strip()
+        if not txt: return None
+        try:
+            lines = [s.strip() for s in txt.split('\n') if s.strip()]; data = []
+            for i in range(0, len(lines), 12):
+                grp = [re.sub(r'integralment(?!e)', 'integralmente', g, flags=re.IGNORECASE) for g in lines[i:i+12]]
+                if len(grp) == 12: data.append(grp)
+                elif len(grp) > 0 and ("Total" in str(grp[0]) or "TUTAL" in str(grp[0]).upper() or "SOMA" in str(grp[0]).upper()):
+                    data.append(grp + ["-"] * (12 - len(grp)))
+            if not data: return None
+            return pd.DataFrame(data, columns=["Parcelas", "Principal", "Juros", "Imposto", "Juros de Mora", "Vencimento", "Status", "Desconto de Juros", "Valor do Desconto", "Valor Antes do Desconto", "Total Devido", "Total Pago"])
+        except: return None
 
     def gerar_arquivo(self, tpl_name, extra_ctx, ticket, prefix, img=None):
         tpl = os.path.join(Config.DIR_TEMPLATES, tpl_name)
@@ -596,7 +672,7 @@ class AutoDED_App(ctk.CTk):
     def limpar_interface(self):
         self.dados_pdf = None; self.df_mis_atual = None; self.atualizar_resumo()
         if self.modo_atual == "DED": self.reset_mis(); self.ent_ticket.delete(0, 'end'); self.check_ded()
-        elif self.modo_atual == "QUIT": self.ent_tk_quit.delete(0, 'end'); self.check_ready_quit()
+        elif self.modo_atual == "QUIT": self.ent_dt_quit.delete(0, 'end'); self.ent_tk_quit.delete(0, 'end'); self.check_ready_quit()
         else: self.mostrar_menu_inicial()
 
     def gerar_img_tab(self, df):

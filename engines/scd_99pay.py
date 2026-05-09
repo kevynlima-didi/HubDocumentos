@@ -34,8 +34,8 @@ def extrair(texto):
 
     # --- DADOS DO CONTRATO (CCB) ---
     dados['NUMERO_CCB'] = buscar_padrao([
-        r'CÉDULA DE CRÉDITO BANCÁRIO N[º°].?\s*([a-zA-Z0-9]{5,})', 
-        r'\(CCB\):\s*([a-zA-Z0-9]+)'
+        r'CÉDULA DE CRÉDITO BANCÁRIO N[º°].?\s*([a-zA-Z0-9]{5,20})\b',
+        r'\(CCB\):\s*([a-zA-Z0-9]{4,20})\b'
     ], texto)
     dados['TIPO_CONTRATO'] = "99PAY SCD v1.0"
 
@@ -82,7 +82,7 @@ def extrair(texto):
         match_valid = re.search(r'([\w\.-]+@[\w\.-]+\.(?:com|br|net|org)(?:\.br)?)', email_limpo, re.IGNORECASE)
         if match_valid: email_final = match_valid.group(1).lower()
     
-    if not email_final: email_final = buscar_padrao([r'E-mail:\s*([^\s]+)'], texto_cliente).lower()
+    if not email_final: email_final = buscar_padrao([r'E-mail:\s*([^\s]+)', r'([\w\.-]+@[\w\.-]+\.\w+)'], texto_cliente).lower()
     dados['EMAIL_CLIENTE'] = email_final
 
     # =========================================================================

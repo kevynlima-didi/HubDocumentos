@@ -31,11 +31,11 @@ def _get_safe_path(folder_name):
 class Config:
     # Identidade da Aplicacao
     APP_TITLE = "Hub de Documentos"
-    VERSION = "v3.1" # Hotfix NameError & Templates
-    
+    VERSION = "v3.2" # Bug fixes & GitHub migration
+
     # Configuracoes de Atualizacao (Git)
-    REPO_URL = "kevynlimai-bit/HubDocumentos"
-    GITHUB_TOKEN = "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"
+    REPO_URL = "kevynlima-didi/HubDocumentos"
+    GITHUB_TOKEN = ""
     EXE_NAME = "Hub.exe"
 
     # --- CAMINHOS (Usando as variáveis globais) ---
@@ -75,7 +75,7 @@ class Config:
     PATTERNS_LEGACY = {
         "nome": [r'Nome:\s*(.*?),', r'EMITENTE\s*Nome:\s*(.*?)(?=\sEndereço)'],
         "cpf": [r'CPF:\s*([\d\.-]+)'],
-        "contrato_ccb": [r'parte integrante.*?Cédula de Crédito Bancário nº\s*(DiDi\d+)', r'(DiDi\s*\d+)'],
+        "contrato_ccb": [r'parte integrante.*?Cédula de Crédito Bancário nº\s*(DiDi\d+)\b', r'(DiDi\s*\d{4,10})\b'],
         "valor_principal": [r'Valor Principal:\s*R\$\s*([\d\.,]+)'],
         "data_emissao": [r'Data de Emissão.*?: \s*(\d{2}/\d{2}/\d{4})'],
         "iof": [r'IOF:\s*R\$\s*([\d\.,]+)']
