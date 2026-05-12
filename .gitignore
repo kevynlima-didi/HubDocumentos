@@ -17,3 +17,12 @@ Hub.exe
 *.exe
 .vscode/
 .idea/
+
+# Documentos internos (NÃO subir para repo público)
+CLAUDE.md
+Bugs relatados.md.md
+inspect.html
+settings.json
+
+# Templates contêm layout de documentos jurídicos
+templates/

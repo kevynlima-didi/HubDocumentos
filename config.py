@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 
 # ==============================================================================
 #  BLOCO DE INICIALIZAÇÃO DE AMBIENTE (GLOBAL)
@@ -7,13 +8,31 @@ import sys
 # ==============================================================================
 if getattr(sys, 'frozen', False):
     # Caminho Interno (Dentro do .exe - Leitura do PyInstaller)
-    SYS_INTERNAL = sys._MEIPASS 
+    SYS_INTERNAL = sys._MEIPASS
     # Caminho Externo (Pasta onde o usuário clicou no .exe - Escrita)
     SYS_EXTERNAL = os.path.dirname(os.path.abspath(sys.executable))
 else:
     # Modo Desenvolvimento
     SYS_INTERNAL = os.path.dirname(os.path.abspath(__file__))
     SYS_EXTERNAL = SYS_INTERNAL
+
+def _load_settings():
+    """Carrega configurações sensíveis do settings.json (não versionado)."""
+    settings_path = os.path.join(SYS_EXTERNAL, "settings.json")
+    defaults = {
+        "drive_path": r"G:\Shared drives",
+        "drive_relative": r"Shared drives",
+        "network_folder": "",
+    }
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
+                defaults.update(loaded)
+        except: pass
+    return defaults
+
+_SETTINGS = _load_settings()
 
 def _get_safe_path(folder_name):
     """
@@ -22,7 +41,7 @@ def _get_safe_path(folder_name):
     """
     path_in = os.path.join(SYS_INTERNAL, folder_name)
     path_out = os.path.join(SYS_EXTERNAL, folder_name)
-    
+
     # Prioridade: Usa o interno se existir (Build), senão usa o externo (Dev/Fallback)
     if os.path.exists(path_in):
         return path_in
@@ -46,29 +65,29 @@ class Config:
     DIR_OUTPUT = os.path.join(SYS_EXTERNAL, "output")
     DIR_TEMP = os.path.join(SYS_EXTERNAL, "temp")
     LOG_FILE = os.path.join(SYS_EXTERNAL, "debug_log.txt")
-    
-    # Caminho de Rede (Referência Base)
-    DRIVE_PATH = r"G:\Shared drives\DiDi   99\CX IBG\06. CX Fintech BR\02. Cashloan\Hub - Documentos Gerados"
+
+    # Caminho de Rede (carregado do settings.json)
+    DRIVE_PATH = _SETTINGS.get("drive_path", "")
 
     # Identidade Visual
     LOGO_PATH = os.path.join(DIR_ASSETS, "logo.png")
-    FONT_FAMILY = "Arial" 
+    FONT_FAMILY = "Arial"
 
     # --- CORES DINÂMICAS ---
     COLORS = {
-        "primary": "#F3C623",      
+        "primary": "#F3C623",
         "primary_hover": "#D4AC0D",
-        "success": ("#27AE60", "#2ECC71"),      
+        "success": ("#27AE60", "#2ECC71"),
         "success_hover": ("#219150", "#27AE60"),
-        "danger": ("#E74C3C", "#FF5252"),       
+        "danger": ("#E74C3C", "#FF5252"),
         "danger_hover": "#C0392B",
-        "dark": ("#000000", "#FFFFFF"),       
-        "text": ("#333333", "#E0E0E0"),       
-        "text_light": ("#666666", "#AAAAAA"), 
-        "bg_main": ("#F5F7F9", "#121212"),    
-        "bg_card": ("#FFFFFF", "#212121"),    
-        "border": ("#E0E0E0", "#404040"),     
-        "input_bg": ("#FAFAFA", "#2A2A2A"),   
+        "dark": ("#000000", "#FFFFFF"),
+        "text": ("#333333", "#E0E0E0"),
+        "text_light": ("#666666", "#AAAAAA"),
+        "bg_main": ("#F5F7F9", "#121212"),
+        "bg_card": ("#FFFFFF", "#212121"),
+        "border": ("#E0E0E0", "#404040"),
+        "input_bg": ("#FAFAFA", "#2A2A2A"),
         "disabled": ("#BDC3C7", "#4A4A4A")
     }
 
@@ -84,12 +103,18 @@ class Config:
     @staticmethod
     def encontrar_caminho_rede():
         """Scanner de Drive de Rede (G: até Z:)"""
-        caminho_relativo = r"Shared drives\DiDi   99\CX IBG\06. CX Fintech BR\02. Cashloan\Hub - Documentos Gerados"
-        
+        network_folder = _SETTINGS.get("network_folder", "")
+        if network_folder and os.path.exists(network_folder):
+            return network_folder
+
+        caminho_relativo = _SETTINGS.get("drive_relative", "")
+        if not caminho_relativo:
+            return None
+
         # 1. Tenta a configuração padrão (G:)
-        default_path = r"G:\Shared drives\DiDi   99\CX IBG\06. CX Fintech BR\02. Cashloan\Hub - Documentos Gerados"
+        default_path = os.path.join("G:\\", caminho_relativo)
         if os.path.exists(default_path): return default_path
-        
+
         # 2. Se falhar, procura em outras letras
         for letra in "HIJKLMNOPQRSTUVWXYZ":
             candidato = f"{letra}:\\{caminho_relativo}"
