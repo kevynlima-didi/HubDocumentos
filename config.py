@@ -50,7 +50,7 @@ def _get_safe_path(folder_name):
 class Config:
     # Identidade da Aplicacao
     APP_TITLE = "Hub de Documentos"
-    VERSION = "v3.2" # Bug fixes & GitHub migration
+    VERSION = "v3.3" # Quitação por Renegociação + correções de extração
 
     # Configuracoes de Atualizacao (Git)
     REPO_URL = "kevynlima-didi/HubDocumentos"

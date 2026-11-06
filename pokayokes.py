@@ -8,12 +8,13 @@ class BusinessValidators:
     """
 
     @staticmethod
-    def validar_campos_obrigatorios(dados_pdf):
+    def validar_campos_obrigatorios(dados_pdf, campos_criticos=None):
         """
         Verifica quais campos cruciais falharam na extracao.
         Retorna: Lista de nomes de campos para o UI destacar em vermelho.
         """
-        campos_criticos = [
+        if campos_criticos is None:
+            campos_criticos = [
             'NOME_INSTITUICAO',
             'CNPJ_INSTITUICAO',
             'TIPO_CONTRATO',
@@ -37,7 +38,7 @@ class BusinessValidators:
             'JUROS_MORA',
             'MULTA_ATRASO',
             'PRAZO_CONTRATO'
-        ]
+            ]
         
         campos_vazios = []
         for campo in campos_criticos:
@@ -94,7 +95,13 @@ class BusinessValidators:
         # NOVO POKA-YOKE (V3.0.5): VALIDAÇÃO DE IDENTIDADE (PRINCIPAL)
         # Garante que a tabela colada pertence ao mesmo contrato do PDF
         # ==========================================================
-        val_mis = limpar_valor(linha_total.get('Principal', '0'))
+        # Confissão e Renegociação: VALOR_PRINCIPAL do PDF é o total repactuado (com juros),
+        # então deve ser comparado com Total Devido do MIS, não com Principal (capital sem juros).
+        tipo_contrato = str(dados_pdf.get('TIPO_CONTRATO', '')).upper()
+        if 'CONFISS' in tipo_contrato:
+            val_mis = limpar_valor(linha_total.get('Total Devido', '0'))
+        else:
+            val_mis = limpar_valor(linha_total.get('Principal', '0'))
         val_pdf = limpar_valor(dados_pdf.get('VALOR_PRINCIPAL', '0'))
         
         # Se o MIS vier zerado no principal (erro de colagem), tenta o Total Devido para nao travar a toa
@@ -172,10 +179,22 @@ class BusinessValidators:
 
         df_parcelas = df_mis.iloc[:-1]
 
+        def _status_pago(v):
+            s = str(v).strip().lower()
+            return any(k in s for k in ['pago', 'integralmente', 'quitado', 'liquidado'])
+
+        def _status_quitado(v):
+            s = str(v).strip().lower()
+            return any(k in s for k in ['integralmente', 'quitado', 'liquidado', 'quitação', 'liquidacao'])
+
         # Verifica se todas as parcelas estao pagas
         qtd_total = len(df_parcelas)
-        qtd_pagas = int(df_parcelas['Status'].str.contains('Pago', case=False, na=False).sum())
+        qtd_pagas = int(df_parcelas['Status'].apply(_status_pago).sum())
         qtd_aberto = qtd_total - qtd_pagas
+
+        status_total_quitado = _status_quitado(linha_total.get('Status', ''))
+        if status_total_quitado:
+            qtd_aberto = 0
 
         if qtd_aberto > 0:
             erros.append(f"Existem {qtd_aberto} parcela(s) em aberto de {qtd_total} total. A quitação só pode ser emitida com todas as parcelas pagas.")
@@ -183,15 +202,51 @@ class BusinessValidators:
         # Verifica saldo devedor
         total_devido = limpar_valor(linha_total.get('Total Devido', '0'))
         total_pago = limpar_valor(linha_total.get('Total Pago', '0'))
-        saldo = total_devido - total_pago
+        saldo = 0.0 if status_total_quitado else (total_devido - total_pago)
 
-        if saldo > 1.0:
+        if not status_total_quitado and saldo > 1.0:
             erros.append(f"Saldo devedor de R$ {saldo:,.2f}. A quitação só pode ser emitida com saldo zero.")
+        elif not status_total_quitado and saldo < -1.0:
+            erros.append(f"Saldo negativo de R$ {abs(saldo):,.2f}. Verifique o Total Devido e o Total Pago no MIS.")
 
         # Verifica identidade da tabela
-        val_mis = limpar_valor(linha_total.get('Principal', '0'))
+        # Confissão e Renegociação: VALOR_PRINCIPAL do PDF é o total repactuado (com juros),
+        # então deve ser comparado com Total Devido do MIS, não com Principal (capital sem juros).
+        tipo_contrato = str(dados_pdf.get('TIPO_CONTRATO', '')).upper()
+        if 'CONFISS' in tipo_contrato:
+            val_mis = limpar_valor(linha_total.get('Total Devido', '0'))
+        else:
+            val_mis = limpar_valor(linha_total.get('Principal', '0'))
         val_pdf = limpar_valor(dados_pdf.get('VALOR_PRINCIPAL', '0'))
         if abs(val_mis - val_pdf) > 1.0 and val_pdf > 0:
             erros.append(f"Essa tabela não corresponde à CCB selecionada.\nPrincipal MIS: R$ {val_mis} | Principal PDF: R$ {val_pdf}")
+
+        return (len(erros) == 0), erros
+
+    @staticmethod
+    def validar_quitacao_reneg(dados_pdf, campos_form):
+        """
+        Poka-yoke para Carta de Quitação por Renegociação.
+        Exige os 3 campos do modelo jurídico (digitados pelo operador no modal):
+        data do acordo, nº do novo contrato e valor repactuado.
+        Retorna: (is_valid, lista_mensagens_erro)
+        """
+        erros = []
+
+        data_reneg = (campos_form.get('DATA_RENEGOCIACAO') or '').strip()
+        novo_ccb = (campos_form.get('NOVO_NUMERO_CCB') or '').strip()
+        valor_repact = (campos_form.get('VALOR_REPACTUADO') or '').strip()
+
+        if not data_reneg:
+            erros.append("Data da renegociação é obrigatória.")
+        if not novo_ccb:
+            erros.append("Número do novo contrato (CCB) é obrigatório.")
+        if not valor_repact:
+            erros.append("Valor repactuado é obrigatório.")
+
+        # O novo contrato não pode ser o mesmo que o contrato original.
+        ccb_original = str(dados_pdf.get('NUMERO_CCB', '')).strip()
+        if novo_ccb and ccb_original and novo_ccb == ccb_original:
+            erros.append("O novo contrato não pode ser igual ao contrato original.")
 
         return (len(erros) == 0), erros

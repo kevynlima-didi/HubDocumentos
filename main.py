@@ -23,7 +23,7 @@ from PIL import Image
 from config import Config, SYS_EXTERNAL
 from utils import limpar_valor, buscar_padrao
 from pokayokes import BusinessValidators 
-from engines import qi_standard, qi_reneg, scd_99pay
+from engines import qi_standard, qi_reneg, scd_99pay, reneg_gonn
 
 # ==============================================================================
 #  1. ATUALIZADOR (PERSISTENTE)
@@ -160,15 +160,17 @@ class AutoDED_App(ctk.CTk):
         win_width = int(screen_width * 0.85); win_height = int(screen_height * 0.85)
         x = (screen_width - win_width) // 2; y = (screen_height - win_height) // 2
         self.geometry(f"{win_width}x{win_height}+{x}+{y}")
-        self.minsize(1024, 600)
+        self.minsize(960, 600)
         
         ctk.set_appearance_mode("Light") 
         for f in [Config.DIR_OUTPUT, Config.DIR_TEMP]: os.makedirs(f, exist_ok=True)
         
         self.dados_pdf = None 
         self.df_mis_atual = None 
+        self.df_mis_quit_atual = None
         self.modo_atual = None
         self.placeholder_mis_txt = "2. COLE A TABELA DO MIS ABAIXO..." 
+        self.placeholder_mis_quit_txt = "2. COLE A TABELA DO MIS ABAIXO..."
         
         self.setup_ui_structure()
         self.mostrar_menu_inicial()
@@ -325,7 +327,7 @@ class AutoDED_App(ctk.CTk):
     # --- UI STRUCTURE ---
     def setup_ui_structure(self):
         self.grid_columnconfigure(0, weight=0); self.grid_columnconfigure(1, weight=1); self.grid_rowconfigure(0, weight=1)
-        self.sidebar = ctk.CTkFrame(self, width=280, corner_radius=0, fg_color=Config.COLORS["bg_card"], border_width=0); self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color=Config.COLORS["bg_card"], border_width=0); self.sidebar.grid(row=0, column=0, sticky="nsew")
         ctk.CTkFrame(self.sidebar, width=1, fg_color=Config.COLORS["border"]).place(relx=1, rely=0, relheight=1, anchor="ne")
         ctk.CTkLabel(self.sidebar, text="HISTÓRICO RECENTE", font=(Config.FONT_FAMILY, 12, "bold"), text_color=Config.COLORS["text_light"]).pack(pady=(35, 15), padx=15, anchor="w")
         self.history_scroll = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent"); self.history_scroll.pack(fill="both", expand=True, padx=5, pady=5)
@@ -334,7 +336,7 @@ class AutoDED_App(ctk.CTk):
         self.header_container = ctk.CTkFrame(self.main_area, height=90, fg_color="transparent", corner_radius=0); self.header_container.grid(row=0, column=0, sticky="ew")
         ctk.CTkFrame(self.header_container, height=6, fg_color=Config.COLORS["primary"], corner_radius=0).pack(fill="x")
         header_bar = ctk.CTkFrame(self.header_container, height=84, fg_color=Config.COLORS["bg_card"], corner_radius=0); header_bar.pack(fill="both", expand=True)
-        header_content = ctk.CTkFrame(header_bar, fg_color="transparent"); header_content.pack(side="left", padx=40, pady=10)
+        header_content = ctk.CTkFrame(header_bar, fg_color="transparent"); header_content.pack(side="left", padx=24, pady=10)
         
         if os.path.exists(Config.LOGO_PATH):
             try:
@@ -346,8 +348,8 @@ class AutoDED_App(ctk.CTk):
 
         ctk.CTkLabel(header_content, text="|", font=("Arial", 32), text_color=Config.COLORS["border"]).pack(side="left", padx=15)
         self.lbl_header_title = ctk.CTkLabel(header_content, text=Config.APP_TITLE, font=(Config.FONT_FAMILY, 20, "bold"), text_color=Config.COLORS["text_light"]); self.lbl_header_title.pack(side="left")
-        self.btn_theme = ctk.CTkButton(header_bar, text="🌙", width=45, height=45, fg_color="transparent", hover_color=Config.COLORS["border"], text_color=Config.COLORS["text"], font=("Segoe UI Emoji", 22), command=self.toggle_theme); self.btn_theme.pack(side="right", padx=40)
-        self.content_area = ctk.CTkFrame(self.main_area, fg_color="transparent"); self.content_area.grid(row=1, column=0, sticky="nsew", padx=40, pady=30)
+        self.btn_theme = ctk.CTkButton(header_bar, text="🌙", width=45, height=45, fg_color="transparent", hover_color=Config.COLORS["border"], text_color=Config.COLORS["text"], font=("Segoe UI Emoji", 22), command=self.toggle_theme); self.btn_theme.pack(side="right", padx=24)
+        self.content_area = ctk.CTkScrollableFrame(self.main_area, fg_color="transparent"); self.content_area.grid(row=1, column=0, sticky="nsew", padx=20, pady=18)
 
     def mostrar_menu_inicial(self):
         for w in self.content_area.winfo_children(): w.destroy()
@@ -356,22 +358,24 @@ class AutoDED_App(ctk.CTk):
         menu = ctk.CTkFrame(self.content_area, fg_color="transparent"); menu.grid(row=0, column=0)
         try: user = os.getlogin().split('.')[0].title()
         except: user = "Operador"
-        ctk.CTkLabel(menu, text=f"Olá, {user}. Selecione:", font=(Config.FONT_FAMILY, 28, "bold"), text_color=Config.COLORS["text"]).pack(pady=(0, 60))
+        ctk.CTkLabel(menu, text=f"Olá, {user}. Selecione:", font=(Config.FONT_FAMILY, 24, "bold"), text_color=Config.COLORS["text"]).pack(pady=(0, 40))
         grid = ctk.CTkFrame(menu, fg_color="transparent"); grid.pack()
         self.criar_btn_menu(grid, "GERAR DED", "Demonstrativo de Dívida", "📊", Config.COLORS["primary"], self.iniciar_ded, 0)
         self.criar_btn_menu(grid, "QUITAÇÃO", "Carta de Pagamento", "✅", Config.COLORS["success"], self.iniciar_quitacao, 1)
+        self.criar_btn_menu(grid, "QUITAÇÃO RENEGOCIAÇÃO", "Carta de Quitação por Renegociação", "🔄", Config.COLORS["success"], self.iniciar_quitacao_reneg, 0, row=1, span=2)
         
         frame_extra = ctk.CTkFrame(menu, fg_color="transparent"); frame_extra.pack(pady=(10, 0))
         ctk.CTkButton(frame_extra, text="Criar Atalho na Área de Trabalho 🖥️", fg_color="transparent", text_color=Config.COLORS["primary"], hover_color=Config.COLORS["bg_card"], font=(Config.FONT_FAMILY, 12, "bold"), command=self.criar_atalho_desktop).pack()
 
-        ctk.CTkLabel(menu, text=f"{Config.APP_TITLE} {Config.VERSION}\nEm caso de dúvidas ou problemas, fale com Kevyn no D-Chat", text_color=Config.COLORS["text_light"], font=(Config.FONT_FAMILY, 11)).pack(side="bottom", pady=60)
+        ctk.CTkLabel(menu, text=f"{Config.APP_TITLE} {Config.VERSION}\nEm caso de dúvidas ou problemas, fale com Kevyn no D-Chat", text_color=Config.COLORS["text_light"], font=(Config.FONT_FAMILY, 11)).pack(side="bottom", pady=30)
 
-    def criar_btn_menu(self, parent, t, d, i, c, cmd, col):
-        btn = ctk.CTkButton(parent, text=f"{i}\n\n{t}\n{d}", font=(Config.FONT_FAMILY, 16, "bold"), width=300, height=180, corner_radius=16, fg_color=Config.COLORS["bg_card"], text_color=Config.COLORS["text"], hover_color=c, border_width=1, border_color=Config.COLORS["border"], command=cmd)
-        btn.grid(row=0, column=col, padx=25, pady=10)
+    def criar_btn_menu(self, parent, t, d, i, c, cmd, col, row=0, span=1):
+        btn = ctk.CTkButton(parent, text=f"{i}\n\n{t}\n{d}", font=(Config.FONT_FAMILY, 15, "bold"), width=260, height=160, corner_radius=16, fg_color=Config.COLORS["bg_card"], text_color=Config.COLORS["text"], hover_color=c, border_width=1, border_color=Config.COLORS["border"], command=cmd)
+        btn.grid(row=row, column=col, columnspan=span, padx=25, pady=10)
 
     def iniciar_ded(self): self.limpar(); self.modo_atual = "DED"; self.lbl_header_title.configure(text="Gerar DED"); self.dashboard("DED")
     def iniciar_quitacao(self): self.limpar(); self.modo_atual = "QUIT"; self.lbl_header_title.configure(text="Carta de Quitação"); self.dashboard("QUIT")
+    def iniciar_quitacao_reneg(self): self.limpar(); self.modo_atual = "QUIT_RENEG"; self.lbl_header_title.configure(text="Quitação por Renegociação"); self.dashboard("QUIT_RENEG")
     def limpar(self): 
         for w in self.content_area.winfo_children(): w.destroy()
 
@@ -385,6 +389,7 @@ class AutoDED_App(ctk.CTk):
         self.card_valor = self.info_card(cards, "PRINCIPAL", "---", "---")
         self.work_box = ctk.CTkFrame(self.content_area, fg_color=Config.COLORS["bg_card"], corner_radius=12, border_width=0); self.work_box.grid(row=2, column=0, sticky="nsew"); self.work_box.grid_columnconfigure(0, weight=1); self.work_box.grid_rowconfigure(1, weight=1)
         if modo == "DED": self.form_ded(self.work_box)
+        elif modo == "QUIT_RENEG": self.form_quit_reneg(self.work_box)
         else: self.form_quit(self.work_box)
 
     def info_card(self, p, t, v, e):
@@ -402,13 +407,31 @@ class AutoDED_App(ctk.CTk):
         try:
             self.dados_pdf = self.extrair_dados_completo_pdf(path)
             self.atualizar_resumo()
-            if origem == 'DED': self.validar_e_tabular_mis() 
+            if origem == 'QUIT_RENEG':
+                tipo = str(self.dados_pdf.get('TIPO_CONTRATO', '')).upper()
+                if 'RENEG' in tipo or 'CONFISS' in tipo:
+                    messagebox.showwarning("PDF Incorreto",
+                        "Este PDF parece ser um contrato de RENEGOCIAÇÃO (novo).\n\n"
+                        "Para Quitação por Renegociação, carregue o PDF do CONTRATO ORIGINAL "
+                        "(a CCB antiga que foi quitada/substituída).\n\n"
+                        "Se esta identificação estiver errada, pode continuar, "
+                        "mas confira os dados no modal de conferência.")
+            if origem == 'DED': self.validar_e_tabular_mis()
+            elif origem == 'QUIT_RENEG': self.check_ready_quit_reneg()
             else: self.check_ready_quit()
         except Exception as e: messagebox.showerror("Erro Leitura", f"Falha: {e}")
 
     def extrair_dados_completo_pdf(self, path):
         reader = PdfReader(path); texto = re.sub(r'\s+', ' ', "".join([p.extract_text() for p in reader.pages]))
-        if "99Pay SCD_v.1.0_2025" in texto or "99PAY SOCIEDADE DE" in texto.upper(): return scd_99pay.extrair(texto)
+        if "INSTRUMENTO PARTICULAR DE CONFISS" in texto.upper() and "DE OUTRO LADO" in texto.upper():
+            return reneg_gonn.extrair(texto)
+        texto_upper = texto.upper()
+        if (
+            "99PAY SCD_V.1.0_2025" in texto_upper
+            or "99PAY SOCIEDADE DE" in texto_upper
+            or ("QUADRO V" in texto_upper and "99PAY SCD" in texto_upper)
+        ):
+            return scd_99pay.extrair(texto)
         elif "Dívida Originária" in texto: return qi_reneg.extrair(texto)
         else: return qi_standard.extrair(texto)
 
@@ -446,18 +469,116 @@ class AutoDED_App(ctk.CTk):
     def on_mis_focus_out(self, event):
         if not self.txt_mis.get("0.0", "end").strip(): self.txt_mis.insert("0.0", self.placeholder_mis_txt); self.txt_mis.configure(text_color="gray")
 
+    def on_mis_quit_focus_in(self, event):
+        if self.txt_mis_quit.get("0.0", "end").strip() == self.placeholder_mis_quit_txt:
+            self.txt_mis_quit.delete("0.0", "end")
+            self.txt_mis_quit.configure(text_color=Config.COLORS["text"][0] if ctk.get_appearance_mode()=="Light" else Config.COLORS["text"][1])
+
+    def on_mis_quit_focus_out(self, event):
+        if not self.txt_mis_quit.get("0.0", "end").strip():
+            self.txt_mis_quit.insert("0.0", self.placeholder_mis_quit_txt)
+            self.txt_mis_quit.configure(text_color="gray")
+
+    def _parse_mis_rows(self, txt):
+        lines = [s.strip() for s in txt.split('\n') if s.strip()]
+        data = []
+        for line in lines:
+            if '\t' in line:
+                row = [c.strip() for c in line.split('\t') if c.strip()]
+                if len(row) == 12:
+                    data.append(row)
+                    continue
+            parts = [p.strip() for p in re.split(r'\s{2,}', line) if p.strip()]
+            if len(parts) == 12:
+                data.append(parts)
+                continue
+
+        if data:
+            return data
+
+        for i in range(0, len(lines), 12):
+            grp = [re.sub(r'integralment(?!e)', 'integralmente', g, flags=re.IGNORECASE) for g in lines[i:i+12]]
+            if len(grp) == 12:
+                data.append(grp)
+            elif len(grp) > 0 and ("Total" in str(grp[0]) or "TUTAL" in str(grp[0]).upper() or "SOMA" in str(grp[0]).upper()):
+                data.append(grp + ["-"] * (12 - len(grp)))
+        return data
+
+    def validar_e_tabular_mis_quit(self, redraw=False):
+        if not hasattr(self, 'txt_mis_quit') or not self.txt_mis_quit.winfo_exists(): return
+        if redraw and getattr(self, 'df_mis_quit_atual', None) is not None:
+            df = self.df_mis_quit_atual
+        else:
+            txt = self.txt_mis_quit.get("0.0", "end").strip()
+            if not txt or txt == self.placeholder_mis_quit_txt:
+                return
+            try:
+                data = self._parse_mis_rows(txt)
+                if not data:
+                    self.lbl_status_quit.configure(text="⚠ Tabela inválida. Verifique se colou corretamente.", text_color=Config.COLORS["danger"])
+                    return
+                df = pd.DataFrame(data, columns=["Parcelas", "Principal", "Juros", "Imposto", "Juros de Mora", "Vencimento", "Status", "Desconto de Juros", "Valor do Desconto", "Valor Antes do Desconto", "Total Devido", "Total Pago"])
+                self.df_mis_quit_atual = df
+            except Exception as e:
+                self.lbl_status_quit.configure(text=f"Erro Formato: {e}", text_color=Config.COLORS["danger"])
+                return
+
+        if not df.empty:
+            self.txt_mis_quit.pack_forget(); self.frame_tabela_quit.pack(fill="both", expand=True, pady=(5, 10))
+            for w in self.frame_tabela_quit.winfo_children(): w.destroy()
+            cols = list(df.columns); is_dark = ctk.get_appearance_mode() == "Dark"
+            head_bg = "#2B2B2B" if is_dark else "#E0E0E0"; cell_fg = "white" if is_dark else "black"
+            for i, c in enumerate(cols): ctk.CTkLabel(self.frame_tabela_quit, text=c, font=(Config.FONT_FAMILY, 9, "bold"), width=90, fg_color=head_bg, text_color=cell_fg, corner_radius=4).grid(row=0, column=i, padx=1, pady=1, sticky="ew")
+            for idx, row in df.iterrows():
+                if idx > 100: break
+                is_total = "Total" in str(row['Parcelas'])
+                row_bg = ("#444444" if is_total else ("#333333" if idx % 2 == 0 else "#222222")) if is_dark else ("#DDDDDD" if is_total else ("white" if idx % 2 == 0 else "#F5F5F5"))
+                for ci, c in enumerate(cols): ctk.CTkLabel(self.frame_tabela_quit, text=str(row[c]), font=(Config.FONT_FAMILY, 9), width=90, fg_color=row_bg, text_color=cell_fg).grid(row=idx+1, column=ci, padx=1, pady=1, sticky="ew")
+
+            if self.dados_pdf:
+                is_valid, erros = BusinessValidators.validar_quitacao(df, self.dados_pdf)
+                if is_valid:
+                    self.lbl_status_quit.configure(text="✓ DADOS CONFEREM", text_color=Config.COLORS["success"])
+                    self.btn_quit.configure(state="normal", fg_color=Config.COLORS["success"], text="GERAR CARTA DE QUITAÇÃO")
+                else:
+                    self.lbl_status_quit.configure(text=f"⚠ {erros[0]}", text_color=Config.COLORS["danger"])
+                    self.btn_quit.configure(state="disabled", fg_color=Config.COLORS["disabled"])
+            else:
+                self.lbl_status_quit.configure(text="Tabela OK. Carregue o PDF para validar.", text_color=Config.COLORS["primary"])
+
+    def reset_mis_quit(self):
+        try:
+            self.frame_tabela_quit.pack_forget(); self.txt_mis_quit.delete("0.0", "end"); self.txt_mis_quit.pack(fill="both", expand=False, pady=(5, 10))
+            self.lbl_status_quit.configure(text="", text_color=Config.COLORS["text_light"])
+            self.txt_mis_quit.insert("0.0", self.placeholder_mis_quit_txt); self.txt_mis_quit.configure(text_color="gray")
+            self.check_ready_quit()
+        except: pass
+
     def form_quit(self, p):
-        container = ctk.CTkFrame(p, fg_color="transparent"); container.pack(fill="both", expand=True, padx=50, pady=30)
+        container = ctk.CTkFrame(p, fg_color="transparent"); container.pack(fill="both", expand=True, padx=24, pady=20)
         ctk.CTkButton(container, text="1. CARREGAR PDF (CCB)", command=lambda: self.carregar_pdf('QUIT'), fg_color=Config.COLORS["success"], height=55, font=(Config.FONT_FAMILY, 14, "bold"), corner_radius=8).pack(fill="x", pady=(0, 20))
         ctk.CTkLabel(container, text="2. COLE A TABELA DO MIS ABAIXO", font=(Config.FONT_FAMILY, 11, "bold"), text_color=Config.COLORS["text_light"]).pack(anchor="w", padx=5)
         self.txt_mis_quit = ctk.CTkTextbox(container, height=150, border_color=Config.COLORS["border"], border_width=1, font=("Consolas", 11), fg_color=Config.COLORS["input_bg"], text_color=Config.COLORS["text"], corner_radius=6)
-        self.txt_mis_quit.pack(fill="x", pady=(5, 10))
+        self.txt_mis_quit.pack(fill="both", expand=False, pady=(5, 10))
+        self.txt_mis_quit.bind("<FocusIn>", self.on_mis_quit_focus_in); self.txt_mis_quit.bind("<FocusOut>", self.on_mis_quit_focus_out); self.txt_mis_quit.bind("<KeyRelease>", lambda e: self.validar_e_tabular_mis_quit())
+        self.frame_tabela_quit = ctk.CTkScrollableFrame(container, fg_color=Config.COLORS["bg_card"], border_width=1, border_color=Config.COLORS["border"])
         self.lbl_status_quit = ctk.CTkLabel(container, text="", text_color=Config.COLORS["text_light"], font=(Config.FONT_FAMILY, 11))
         self.lbl_status_quit.pack(anchor="w", padx=5)
         ctk.CTkLabel(container, text="DATA QUITAÇÃO (DD/MM/AAAA)", font=(Config.FONT_FAMILY, 11, "bold"), text_color=Config.COLORS["text_light"]).pack(anchor="w", padx=5, pady=(10, 0))
         self.ent_dt_quit = ctk.CTkEntry(container, height=45, border_color=Config.COLORS["border"], border_width=1, fg_color=Config.COLORS["input_bg"], text_color=Config.COLORS["text"], corner_radius=6); self.ent_dt_quit.pack(fill="x", pady=(5, 20))
         self.ent_tk_quit = ctk.CTkEntry(container, height=45, border_color=Config.COLORS["border"], border_width=1, fg_color=Config.COLORS["input_bg"], text_color=Config.COLORS["text"], corner_radius=6, placeholder_text="NÚMERO DO TICKET"); self.ent_tk_quit.pack(fill="x", pady=(5, 30)); self.ent_tk_quit.bind("<KeyRelease>", lambda e: self.check_ready_quit())
         self.btn_quit = ctk.CTkButton(container, text="GERAR CARTA DE QUITAÇÃO", state="disabled", height=55, fg_color=Config.COLORS["disabled"], font=(Config.FONT_FAMILY, 14, "bold"), corner_radius=8, command=lambda: self.pre_validacao("QUIT")); self.btn_quit.pack(fill="x")
+
+    def form_quit_reneg(self, p):
+        container = ctk.CTkFrame(p, fg_color="transparent"); container.pack(fill="both", expand=True, padx=24, pady=20)
+        ctk.CTkButton(container, text="1. CARREGAR PDF (CCB ORIGINAL)", command=lambda: self.carregar_pdf('QUIT_RENEG'), fg_color=Config.COLORS["success"], height=55, font=(Config.FONT_FAMILY, 14, "bold"), corner_radius=8).pack(fill="x", pady=(0, 20))
+        ctk.CTkLabel(container, text="2. NÚMERO DO TICKET", font=(Config.FONT_FAMILY, 11, "bold"), text_color=Config.COLORS["text_light"]).pack(anchor="w", padx=5)
+        self.ent_tk_reneg = ctk.CTkEntry(container, height=45, border_color=Config.COLORS["border"], border_width=1, fg_color=Config.COLORS["input_bg"], text_color=Config.COLORS["text"], corner_radius=6, placeholder_text="NÚMERO DO TICKET"); self.ent_tk_reneg.pack(fill="x", pady=(5, 20)); self.ent_tk_reneg.bind("<KeyRelease>", lambda e: self.check_ready_quit_reneg())
+        self.btn_quit_reneg = ctk.CTkButton(container, text="GERAR CARTA DE QUITAÇÃO POR RENEGOCIAÇÃO", state="disabled", height=55, fg_color=Config.COLORS["disabled"], font=(Config.FONT_FAMILY, 14, "bold"), corner_radius=8, command=lambda: self.pre_validacao("QUIT_RENEG")); self.btn_quit_reneg.pack(fill="x")
+
+    def check_ready_quit_reneg(self):
+        if self.dados_pdf and len(self.ent_tk_reneg.get()) > 0: self.btn_quit_reneg.configure(state="normal", fg_color=Config.COLORS["success"])
+        else: self.btn_quit_reneg.configure(state="disabled")
 
     def validar_e_tabular_mis(self, redraw=False):
         if not hasattr(self, 'txt_mis') or not self.txt_mis.winfo_exists(): return
@@ -523,20 +644,31 @@ class AutoDED_App(ctk.CTk):
 
     def pre_validacao(self, modo):
         if not self.dados_pdf:
-            messagebox.showwarning("Aviso", "Nenhum PDF carregado."); 
-            if modo == "DED": self.check_ded() 
+            messagebox.showwarning("Aviso", "Nenhum PDF carregado.");
+            if modo == "DED": self.check_ded()
+            elif modo == "QUIT_RENEG": self.check_ready_quit_reneg()
             else: self.check_ready_quit()
             return
         ok, erros = BusinessValidators.validar_regras_financeiras(self.dados_pdf)
         if not ok: 
             if not messagebox.askyesno("Alerta", f"{erros[0]}\nContinuar?"): return
-        self.campos_faltantes = BusinessValidators.validar_campos_obrigatorios(self.dados_pdf)
+        if modo == "QUIT":
+            campos_quitacao = ['NOME_INSTITUICAO', 'CNPJ_INSTITUICAO', 'NUMERO_CCB', 'NOME_CLIENTE', 'CPF_CLIENTE', 'VALOR_PRINCIPAL', 'DATA_EMISSAO_CCB']
+            self.campos_faltantes = BusinessValidators.validar_campos_obrigatorios(self.dados_pdf, campos_quitacao)
+        elif modo == "QUIT_RENEG":
+            campos_reneg = ['NOME_INSTITUICAO', 'CNPJ_INSTITUICAO', 'NUMERO_CCB', 'NOME_CLIENTE', 'CPF_CLIENTE', 'VALOR_PRINCIPAL', 'DATA_EMISSAO_CCB']
+            self.campos_faltantes = BusinessValidators.validar_campos_obrigatorios(self.dados_pdf, campos_reneg)
+            self.campos_faltantes += ['DATA_RENEGOCIACAO', 'NOVO_NUMERO_CCB', 'VALOR_REPACTUADO']
+        else:
+            self.campos_faltantes = BusinessValidators.validar_campos_obrigatorios(self.dados_pdf)
         self.modal_conferencia(modo)
 
     def modal_conferencia(self, modo):
         m = ctk.CTkToplevel(self); m.title("Auditoria Final"); m.geometry("600x800"); m.grab_set(); m.configure(fg_color=Config.COLORS["bg_main"])
         s = ctk.CTkScrollableFrame(m, fg_color="transparent"); s.pack(fill="both", expand=True, padx=20, pady=20)
         self.ents = {}; campos = [("NOME_INSTITUICAO", "Instituição Financeira"), ("CNPJ_INSTITUICAO", "CNPJ Instituição"), ("TIPO_CONTRATO", "Tipo Contrato"), ("NUMERO_CCB", "Nº Contrato (CCB)"), ("NOME_CLIENTE", "Nome do Cliente"), ("CPF_CLIENTE", "CPF"), ("ENDERECO_CLIENTE", "Endereço"), ("CIDADE", "Cidade"), ("ESTADO", "Estado (UF)"), ("TEL_CLIENTE", "Telefone"), ("EMAIL_CLIENTE", "E-mail"), ("VALOR_PRINCIPAL", "Valor Principal"), ("VALOR_LIBERADO", "Valor Liberado"), ("VALOR_IOF", "Valor IOF"), ("DATA_EMISSAO_CCB", "Data Emissão"), ("VENCIMENTO_FINAL", "Vencimento Final"), ("TAXA_JUROS_MENSAL", "Tx Juros Mensal"), ("TAXA_JUROS_ANUAL", "Tx Juros Anual"), ("CET_MENSAL", "CET Mensal"), ("CET_ANUAL", "CET Anual"), ("JUROS_MORA", "Juros Mora"), ("MULTA_ATRASO", "Multa Atraso"), ("PRAZO_CONTRATO", "Prazo Dias")]
+        if modo == "QUIT_RENEG":
+            campos += [("DATA_RENEGOCIACAO", "Data da Renegociação"), ("NOVO_NUMERO_CCB", "Nº Novo Contrato (CCB)"), ("VALOR_REPACTUADO", "Valor Repactuado")]
         ctk.CTkLabel(s, text="Confira os dados extraídos:", font=(Config.FONT_FAMILY, 16, "bold"), text_color=Config.COLORS["text"]).pack(pady=(0, 15))
         for k, label in campos:
             f = ctk.CTkFrame(s, fg_color=Config.COLORS["bg_card"], corner_radius=6); f.pack(fill="x", pady=4, padx=5)
@@ -547,7 +679,7 @@ class AutoDED_App(ctk.CTk):
         f = ctk.CTkFrame(s, fg_color=Config.COLORS["bg_card"], corner_radius=6); f.pack(fill="x", pady=10, padx=5)
         ctk.CTkLabel(f, text="Ticket", width=150, anchor="w", font=(Config.FONT_FAMILY, 11, "bold"), text_color=Config.COLORS["text_light"]).pack(side="left", padx=10)
         et = ctk.CTkEntry(f, width=300, border_width=0, fg_color=Config.COLORS["bg_card"], text_color=Config.COLORS["text"])
-        et.insert(0, self.ent_ticket.get() if modo == "DED" else self.ent_tk_quit.get()); et.pack(side="right", fill="x", expand=True, padx=10); self.ents['TICKET'] = et
+        et.insert(0, self.ent_ticket.get() if modo == "DED" else (self.ent_tk_reneg.get() if modo == "QUIT_RENEG" else self.ent_tk_quit.get())); et.pack(side="right", fill="x", expand=True, padx=10); self.ents['TICKET'] = et
         btn = ctk.CTkFrame(m, fg_color="transparent"); btn.pack(fill="x", padx=20, pady=20)
         ctk.CTkButton(btn, text="CANCELAR", fg_color=Config.COLORS["danger"], width=150, height=40, command=m.destroy).pack(side="left")
         btn_gerar = ctk.CTkButton(btn, text="CONFIRMAR E GERAR", fg_color=Config.COLORS["success"], width=200, height=40, command=lambda: self.executar_geracao(modo, m))
@@ -569,6 +701,7 @@ class AutoDED_App(ctk.CTk):
             if k != 'TICKET': self.dados_pdf[k] = e.get()
         ticket = self.ents['TICKET'].get(); modal.destroy()
         if modo == "DED": self.processar_ded(ticket)
+        elif modo == "QUIT_RENEG": self.processar_quitacao_reneg(ticket)
         else: self.processar_quitacao(ticket)
 
     def processar_ded(self, ticket):
@@ -603,17 +736,30 @@ class AutoDED_App(ctk.CTk):
             self.converter_e_copiar(self.gerar_arquivo("template_quitacao.docx", {'DATA_QUITACAO': dt}, ticket, "QUITACAO"), ticket)
         except Exception as e: messagebox.showerror("Erro", str(e))
 
+    def processar_quitacao_reneg(self, ticket):
+        try:
+            campos_form = {
+                'DATA_RENEGOCIACAO': str(self.dados_pdf.get('DATA_RENEGOCIACAO', '')).strip(),
+                'NOVO_NUMERO_CCB': str(self.dados_pdf.get('NOVO_NUMERO_CCB', '')).strip(),
+                'VALOR_REPACTUADO': re.sub(r'[^0-9.,]', '', str(self.dados_pdf.get('VALOR_REPACTUADO', ''))),
+            }
+            is_valid, erros = BusinessValidators.validar_quitacao_reneg(self.dados_pdf, campos_form)
+            if not is_valid:
+                messagebox.showerror("Validação de Quitação por Renegociação", "\n".join(erros))
+                return
+            self.converter_e_copiar(self.gerar_arquivo("template_quitacao_reneg.docx", campos_form, ticket, "QUITACAO_RENEG"), ticket)
+        except Exception as e:
+            logging.error(f"Erro Geração Quitação Reneg: {e}")
+            messagebox.showerror("Erro", str(e))
+
     def _parse_mis_quit(self):
+        if getattr(self, 'df_mis_quit_atual', None) is not None:
+            return self.df_mis_quit_atual
         if not hasattr(self, 'txt_mis_quit') or not self.txt_mis_quit.winfo_exists(): return None
         txt = self.txt_mis_quit.get("0.0", "end").strip()
         if not txt: return None
         try:
-            lines = [s.strip() for s in txt.split('\n') if s.strip()]; data = []
-            for i in range(0, len(lines), 12):
-                grp = [re.sub(r'integralment(?!e)', 'integralmente', g, flags=re.IGNORECASE) for g in lines[i:i+12]]
-                if len(grp) == 12: data.append(grp)
-                elif len(grp) > 0 and ("Total" in str(grp[0]) or "TUTAL" in str(grp[0]).upper() or "SOMA" in str(grp[0]).upper()):
-                    data.append(grp + ["-"] * (12 - len(grp)))
+            data = self._parse_mis_rows(txt)
             if not data: return None
             return pd.DataFrame(data, columns=["Parcelas", "Principal", "Juros", "Imposto", "Juros de Mora", "Vencimento", "Status", "Desconto de Juros", "Valor do Desconto", "Valor Antes do Desconto", "Total Devido", "Total Pago"])
         except: return None
@@ -623,7 +769,8 @@ class AutoDED_App(ctk.CTk):
         if not os.path.exists(tpl): raise Exception(f"Template {tpl_name} não encontrado.")
         doc = DocxTemplate(tpl); ctx = {**self.dados_pdf, **extra_ctx}
         if img: ctx['TABELA_FINANCEIRA'] = InlineImage(doc, img, width=Inches(7.1))
-        fname = f"{prefix}_{re.sub(r'[^\w\-]', '_', str(self.dados_pdf.get('NUMERO_CCB', 'SEM_CCB')))}_Ticket-{ticket}"
+        ccb_segura = re.sub(r'[^\w\-]', '_', str(self.dados_pdf.get('NUMERO_CCB', 'SEM_CCB')))
+        fname = f"{prefix}_{ccb_segura}_Ticket-{ticket}"
         docx_out = os.path.join(Config.DIR_OUTPUT, fname + ".docx")
         doc.render(ctx); doc.save(docx_out)
         return docx_out
@@ -657,7 +804,10 @@ class AutoDED_App(ctk.CTk):
         except Exception as e:
             logging.error(f"Erro PDF: {e}") # LOG ADICIONADO
             messagebox.showerror("Erro PDF", str(e))
-        finally: pythoncom.CoUninitialize()
+        finally:
+            try: w.Quit()
+            except: pass
+            pythoncom.CoUninitialize()
 
     # --- NOVO MÉTODO DE POPUP ---
     def mostrar_sucesso_com_link(self, titulo, mensagem, caminho):
@@ -673,6 +823,7 @@ class AutoDED_App(ctk.CTk):
         self.dados_pdf = None; self.df_mis_atual = None; self.atualizar_resumo()
         if self.modo_atual == "DED": self.reset_mis(); self.ent_ticket.delete(0, 'end'); self.check_ded()
         elif self.modo_atual == "QUIT": self.ent_dt_quit.delete(0, 'end'); self.ent_tk_quit.delete(0, 'end'); self.check_ready_quit()
+        elif self.modo_atual == "QUIT_RENEG": self.ent_tk_reneg.delete(0, 'end'); self.check_ready_quit_reneg()
         else: self.mostrar_menu_inicial()
 
     def gerar_img_tab(self, df):

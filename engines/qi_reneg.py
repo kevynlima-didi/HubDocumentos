@@ -23,7 +23,7 @@ def extrair(texto):
         # Identificadores
         'NOME_CLIENTE': str(buscar_multiplo(Config.PATTERNS_LEGACY["nome"], texto)).title(),
         'CPF_CLIENTE': buscar_multiplo(Config.PATTERNS_LEGACY["cpf"], texto),
-        'NUMERO_CCB': contratos_origem if contratos_origem else "RENEG_GENERICA",
+        'NUMERO_CCB': buscar_multiplo(Config.PATTERNS_LEGACY["contrato_ccb"], texto) or (contratos_origem if contratos_origem else "RENEG_GENERICA"),
         
         # Valores
         'VALOR_PRINCIPAL': buscar_multiplo(Config.PATTERNS_LEGACY["valor_principal"], texto),

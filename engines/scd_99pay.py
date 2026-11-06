@@ -19,12 +19,14 @@ def extrair(texto):
     dados['NOME_INSTITUICAO'] = buscar_padrao([
         r'QUADRO V.*?CREDOR\s*(99\s*SCD\s*SOCIEDADE.*?S\.?A\.?)',
         r'QUADRO V.*?CREDOR\s*(99PAY\s*SOCIEDADE.*?S\.?A\.?)',
+        r'QUADRO V.*?CREDOR\s*(99PAY\s*SCD)',
         r'(99PAY\s*SOCIEDADE\s*DE\s*CRÉDITO\s*DIRETO\s*S\.?A\.?)'
     ], texto).strip()
 
     cnpj_raw = buscar_padrao([
         r'QUADRO V.*?CNPJ.*?(\d{2}\.\d{3}\.\d{3}\s*/\s*\d{4}-\d{2})',
-        r'CREDOR.*?CNPJ.*?(\d{2}\.\d{3}\.\d{3}\s*/\s*\d{4}-\d{2})'
+        r'CREDOR.*?CNPJ.*?(\d{2}\.\d{3}\.\d{3}\s*/\s*\d{4}-\d{2})',
+        r'QUADRO V.*?99PAY\s*SCD.*?CNPJ(?:/MF|/ME)?\s*:?\s*(\d{2}\.\d{3}\.\d{3}\s*/\s*\d{4}-\d{2})'
     ], texto)
     dados['CNPJ_INSTITUICAO'] = cnpj_raw.replace(' ', '')
 
@@ -35,7 +37,9 @@ def extrair(texto):
     # --- DADOS DO CONTRATO (CCB) ---
     dados['NUMERO_CCB'] = buscar_padrao([
         r'CÉDULA DE CRÉDITO BANCÁRIO N[º°].?\s*([a-zA-Z0-9]{5,})(?=\s)',
-        r'\(CCB\):\s*([a-zA-Z0-9]+)(?=\s)'
+        r'\(CCB\):\s*([a-zA-Z0-9]+)(?=\s)',
+        r'C[ÉE]DULA DE CR[ÉE]DITO BANC[ÁA]RIO.*?N[º°.]?\s*([a-zA-Z0-9_-]{5,})',
+        r'C[ÉE]DULA\s+DE\s+CR[ÉE]DITO\s+BANC[ÁA]RIO\s+(?:N[º°.]?\s*)?([a-zA-Z0-9_-]{5,})'
     ], texto)
     dados['TIPO_CONTRATO'] = "99PAY SCD v1.0"
 
@@ -89,19 +93,19 @@ def extrair(texto):
     # 3. VALORES E TAXAS (Busca Global ou Local, conforme conveniência)
     # =========================================================================
     
-    dados['VALOR_PRINCIPAL'] = buscar_padrao([r'Valor Principal\*?:\s*R\$\s*([\d\.,]+)'], texto)
-    dados['VALOR_LIBERADO'] = buscar_padrao([r'Valor Liberado:\s*R\$\s*([\d\.,]+)', r'Valor Total Liberado\s*R\$\s*([\d\.,]+)'], texto)
-    dados['VALOR_IOF'] = buscar_padrao([r'IOF:\s*R\$\s*([\d\.,]+)'], texto)
+    dados['VALOR_PRINCIPAL'] = buscar_padrao([r'Valor Principal\*?:\s*R\$\s*([\d\.,]+)', r'Valor Principal\*?:\s*R\$([\d\.,]+)'], texto)
+    dados['VALOR_LIBERADO'] = buscar_padrao([r'Valor Liberado:\s*R\$\s*([\d\.,]+)', r'Valor Liberado:\s*R\$([\d\.,]+)', r'Valor Total Liberado\s*R\$\s*([\d\.,]+)'], texto)
+    dados['VALOR_IOF'] = buscar_padrao([r'IOF:\s*R\$\s*([\d\.,]+)', r'IOF:\s*R\$([\d\.,]+)'], texto)
 
-    dados['DATA_EMISSAO_CCB'] = buscar_padrao([r'Data de Emissão.*?:\s*(\d{2}/\d{2}/\d{4})'], texto)
+    dados['DATA_EMISSAO_CCB'] = buscar_padrao([r'Data de Emissão.*?:\s*(\d{2}/\d{2}/\d{4})', r'Data de Emissão desta Cédula:\s*(\d{2}/\d{2}/\d{4})'], texto)
     dados['VENCIMENTO_FINAL'] = buscar_padrao([r'Vencimento Final:\s*(\d{2}/\d{2}/\d{4})', r'vencimento da última parcela:\s*(\d{2}/\d{2}/\d{4})'], texto)
     dados['PRAZO_CONTRATO'] = buscar_padrao([r'Prazo:\s*(\d+\s+dias)'], texto)
 
     dados['TAXA_JUROS_MENSAL'] = buscar_padrao([r'Juros pré-fixados de\s*([\d,]+)\s*%'], texto)
     dados['TAXA_JUROS_ANUAL'] = buscar_padrao([r'equivalente à taxa de\s*([\d,]+)\s*%'], texto)
-    dados['CET_MENSAL'] = buscar_padrao([r'\(CET\) Mensal:\s*([\d,]+)\s*%'], texto)
-    dados['CET_ANUAL'] = buscar_padrao([r'\(CET\) Anual:\s*([\d,]+)\s*%'], texto)
-    dados['JUROS_MORA'] = buscar_padrao([r'Juros Moratórios:\s*([\d,]+)\s*%'], texto)
+    dados['CET_MENSAL'] = buscar_padrao([r'\(CET\) Mensal:\s*([\d,]+)\s*%', r'CET Mensal:\s*([\d,]+)\s*%'], texto)
+    dados['CET_ANUAL'] = buscar_padrao([r'\(CET\) Anual:\s*([\d,]+)\s*%', r'CET Anual:\s*([\d,]+)\s*%'], texto)
+    dados['JUROS_MORA'] = buscar_padrao([r'Juros Moratórios:\s*([\d,]+)\s*%', r'Juros Moratórios.*?:\s*([\d,]+)\s*%'], texto)
     dados['MULTA_ATRASO'] = buscar_padrao([r'Multa.*?:\s*([\d,]+)\s*%'], texto)
 
     return dados
